@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Bench — Lookup</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -195,7 +195,7 @@
       return (
         <div className="card">
           <div className="card-head">
-            <div>
+            <div className="card-head-text">
               <div className="card-title"><Highlight text={title} query={q} /></div>
               <div className="card-sub">
                 <span className="badge pb">PandaBuy</span>
@@ -204,7 +204,7 @@
                 {rec.city && <span className="city"><Highlight text={rec.city} query={q} /></span>}
               </div>
             </div>
-            {rec.id && <span className="badge ghost mono">#{rec.id}</span>}
+            {rec.id && <span className="badge ghost mono card-id">#{rec.id}</span>}
           </div>
 
           {primary.length > 0 && (
@@ -237,7 +237,7 @@
       return (
         <div className="card">
           <div className="card-head">
-            <div>
+            <div className="card-head-text">
               <div className="card-title"><Highlight text={rec.address || ""} query={q} /></div>
               <div className="card-sub">
                 <span className="badge us">USFans</span>
@@ -246,23 +246,23 @@
                 <span>{rec.province}</span>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 6 }}>
+            <div className="card-badges">
               <span className="badge ghost">{rec.total_packages ?? 0} pacz.</span>
               <span className="badge ghost">{fmtNum(rec.total_weight)} kg</span>
             </div>
           </div>
           {(rec.people || []).map((p, i) => (
-            <div key={i} style={{ marginTop: i ? 14 : 0, paddingTop: i ? 14 : 0, borderTop: i ? "1px solid var(--line)" : "none" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                <div style={{ fontWeight: 600 }}><Highlight text={p.name || ""} query={q} /></div>
-                {p.phone && <span className="mono" style={{ color: "var(--muted)" }}>{fmtPhone(p.phone)}</span>}
+            <div key={i} className={`person-block ${i ? "with-sep" : ""}`}>
+              <div className="person-row">
+                <div className="person-name"><Highlight text={p.name || ""} query={q} /></div>
+                {p.phone && <span className="mono person-phone">{fmtPhone(p.phone)}</span>}
               </div>
               {(p.shipments || []).length > 0 && (
                 <div className="ship-list">
                   {(p.shipments || []).map((s, j) => (
                     <div key={j} className="ship-row">
                       <span className="mono ship-order">{s.order || ""}</span>
-                      <span style={{ color: "var(--muted)", fontSize: 12 }}>
+                      <span className="ship-meta">
                         {s.tracking2 || ""} · {fmtNum(s.weight_kg)} kg
                       </span>
                       <span className="ship-status">{s.status || s.created_at || "—"}</span>
@@ -351,7 +351,7 @@
           <div className="status">
             {s.query && s.query !== s.debounced && <span className="spinner" />}
             {s.debounced && s.filtered.length > 0 && (
-              <span>Trafienia: <b style={{color:"var(--text)"}}>{s.filtered.length}</b></span>
+              <span>Trafienia: <b className="status-num">{s.filtered.length}</b></span>
             )}
             {!s.debounced && <span>Wpisz frazę żeby szukać.</span>}
           </div>
