@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bench — Lookup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+
+  <script src="data/marks_part1.js"></script>
+  <script src="data/marks_part2.js"></script>
+  <script src="data/marks_part3.js"></script>
+  <script src="data/pandabuy_poland.js"></script>
+
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useMemo, useEffect } = React;
+
+    const norm = (s) =>
+      String(s ?? "").toLowerCase().normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "").replace(/ł/g, "l").trim();
+
+    function Highlight({ text, query }) {
+      const raw = String(text ?? "");
+      const nQ = norm(query);
+      if (!nQ) return raw;
+      const idx = norm(raw).indexOf(nQ);
+      if (idx === -1) return raw;
+      return (
+        <>
+          {raw.slice(0, idx)}
+          <mark>{raw.slice(idx, idx + nQ.length)}</mark>
+          {raw.slice(idx + nQ.length)}
+        </>
+      );
+    }
+
+    const fmtNum = (n) =>
+      Number(n ?? 0).toLocaleString("pl-PL", { maximumFractionDigits: 2 });
+
+    const fmtPhone = (p) => {
+      const d = String(p ?? "").replace(/\s+/g, "");
+      if (!d) return "";
+      const m = d.match(/^\+48(\d{9})$/);
+      if (m) return `+48 ${m[1].slice(0,3)} ${m[1].slice(3,6)} ${m[1].slice(6)}`;
+      return d;
+    };
+
+    function pickGeo(name) {
+      try { const v = eval(name); if (Array.isArray(v)) return v; } catch (_) {}
+      const w = window[name];
+      return Array.isArray(w) ? w : [];
+    }
+
+    const US_FANS = []
+      .concat(pickGeo("GEO_DATA_P1"))
+      .concat(pickGeo("GEO_DATA_P2"))
+      .concat(pickGeo("GEO_DATA_P3"))
+      .map((r) => ({ __cat: "usfans", ...r }));
+
+    const PB_ROWS = Array.isArray(window.PB_DATA)
+      ? window.PB_DATA.map((r) => ({ __cat: "pandabuy", ...r }))
+      : [];
+
+    function buildSearchText(rec) {
+      const parts = [];
+      const walk = (v) => {
+        if (v == null) return;
+        if (typeof v === "string" || typeof v === "number") { parts.push(String(v)); return; }
+        if (Array.isArray(v)) { v.forEach(walk); return; }
+        if (typeof v === "object") { for (const k in v) walk(v[k]); }
+      };
+      walk(rec);
+      return norm(parts.join(" \u0001 "));
+    }
+
+    const ALL = US_FANS.concat(PB_ROWS).map((r) => ({ ...r, __search: buildSearchText(r) }));
+
+    function flatten(rec) {
+      const o = {};
+      const walk = (v, prefix) => {
+        if (v == null) { o[prefix] = ""; return; }
+        if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+          o[prefix] = String(v); return;
+        }
+        if (Array.isArray(v)) {
+          if (v.every((x) => typeof x !== "object" || x === null)) o[prefix] = v.join(" | ");
+          else o[prefix] = JSON.stringify(v);
+          return;
+        }
+        if (typeof v === "object") for (const k in v) walk(v[k], prefix ? `${prefix}.${k}` : k);
+      };
+      walk(rec, "");
+      return o;
+    }
+
+    function toCSV(records) {
+      const flat = records.map(flatten);
+      const keys = Array.from(flat.reduce((s, o) => {
+        Object.keys(o).forEach((k) => s.add(k)); return s;
+      }, new Set()));
+      const escCell = (v) => {
+        const s = String(v ?? "");
+        return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      return keys.map(escCell).join(",") + "\n" +
+             flat.map((o) => keys.map((k) => escCell(o[k])).join(",")).join("\n");
+    }
+
+    function download(filename, content, mime) {
+      const blob = new Blob([content], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    const stamp = () => {
+      const d = new Date(), p = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+    };
+
+    function Hero({ totalUs, totalPeople, totalShips, totalPb }) {
+      return (
+        <div className="hero">
+          <div className="hero-inner">
+            <h1 className="hero-title">Bench · Lookup</h1>
+            <div className="hero-sub">
+              <span className="hero-stat"><span className="hero-dot" />USFans <b>{totalUs}</b> adr · <b>{totalPeople}</b> os · <b>{totalShips}</b> pacz</span>
+              <span className="hero-stat"><span className="hero-dot pb" />PandaBuy <b>{totalPb}</b> rek.</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function Tabs({ active, onChange }) {
+      const items = [
+        { key: "all", label: "Wszystkie" },
+        { key: "usfans", label: "USFans" },
+        { key: "pandabuy", label: "PandaBuy" },
+      ];
+      return (
+        <div className="tabs">
+          {items.map((i) => (
+            <button
+              key={i.key}
+              className={`tab ${active === i.key ? "active" : ""} ${i.key === "pandabuy" ? "pb" : ""}`}
+              onClick={() => onChange(i.key)}
+            >{i.label}</button>
+          ))}
+        </div>
+      );
+    }
+
+    const FIELD_LABELS = {
+      first: "Imię", last: "Nazwisko", age: "Wiek",
+      phone: "Telefon", email: "E-mail", ip: "IP",
+      country: "Kraj", region: "Region", city: "Miasto",
+      address: "Adres", postal: "Kod poczt.",
+      status: "Status", ts: "Data", session: "Sesja", device: "Urządzenie",
+      order_no: "Zamówienie", subject: "Temat", message: "Wiadomość",
+      agent: "Agent", created: "Utworzono", updated: "Zaktualizowano",
+      ref: "Ref", uid: "UID", id: "ID", code1: "Kod 1",
+    };
+    const SKIP = new Set(["__kind","__src","__cat","__search","first","last"]);
+
+    function PBCard({ rec, q }) {
+      const fullName = [rec.first, rec.last].filter(Boolean).join(" ").trim();
+      const title = fullName || rec.email || rec.phone || rec.order_no || rec.subject ||
+                    (rec.id ? `#${rec.id}` : "rekord");
+
+      const fields = Object.keys(rec)
+        .filter((k) => !SKIP.has(k) && rec[k] !== "" && rec[k] != null)
+        .map((k) => ({ key: k, label: FIELD_LABELS[k] || k, val: rec[k] }));
+
+      const primary = fields.filter((f) => ["phone","email"].includes(f.key));
+      const rest = fields.filter((f) => !["phone","email"].includes(f.key));
+
+      const kindLabel = rec.__kind === "phone" ? "telefon"
+                      : rec.__kind === "email" ? "e-mail"
+                      : rec.__kind === "order" ? "zamówienie"
+                      : (rec.__kind || "");
+
+      return (
+        <div className="card">
+          <div className="card-head">
+            <div>
+              <div className="card-title"><Highlight text={title} query={q} /></div>
+              <div className="card-sub">
+                <span className="badge pb">PandaBuy</span>
+                <span className="badge ghost">{kindLabel}</span>
+                {rec.country && <span>{rec.country}</span>}
+                {rec.city && <span className="city"><Highlight text={rec.city} query={q} /></span>}
+              </div>
+            </div>
+            {rec.id && <span className="badge ghost mono">#{rec.id}</span>}
+          </div>
+
+          {primary.length > 0 && (
+            <div className="pb-contact">
+              {primary.map((f) => (
+                <span key={f.key} className="pb-contact-item">
+                  <span className="ico">◉</span>
+                  <strong>{f.label}:</strong>
+                  <span className="mono"><Highlight text={f.val} query={q} /></span>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {rest.length > 0 && (
+            <div className="pb-grid">
+              {rest.map((f) => (
+                <div key={f.key} className="pb-cell">
+                  <span className="pb-label">{f.label}</span>
+                  <span className="pb-value"><Highlight text={f.val} query={q} /></span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function USCard({ rec, q }) {
+      return (
+        <div className="card">
+          <div className="card-head">
+            <div>
+              <div className="card-title"><Highlight text={rec.address || ""} query={q} /></div>
+              <div className="card-sub">
+                <span className="badge us">USFans</span>
+                <span className="city"><Highlight text={rec.city || ""} query={q} /></span>
+                <span>{rec.postal_code}</span>
+                <span>{rec.province}</span>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <span className="badge ghost">{rec.total_packages ?? 0} pacz.</span>
+              <span className="badge ghost">{fmtNum(rec.total_weight)} kg</span>
+            </div>
+          </div>
+          {(rec.people || []).map((p, i) => (
+            <div key={i} style={{ marginTop: i ? 14 : 0, paddingTop: i ? 14 : 0, borderTop: i ? "1px solid var(--line)" : "none" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ fontWeight: 600 }}><Highlight text={p.name || ""} query={q} /></div>
+                {p.phone && <span className="mono" style={{ color: "var(--muted)" }}>{fmtPhone(p.phone)}</span>}
+              </div>
+              {(p.shipments || []).length > 0 && (
+                <div className="ship-list">
+                  {(p.shipments || []).map((s, j) => (
+                    <div key={j} className="ship-row">
+                      <span className="mono ship-order">{s.order || ""}</span>
+                      <span style={{ color: "var(--muted)", fontSize: 12 }}>
+                        {s.tracking2 || ""} · {fmtNum(s.weight_kg)} kg
+                      </span>
+                      <span className="ship-status">{s.status || s.created_at || "—"}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function useSearch() {
+      const [query, setQuery] = useState("");
+      const [cat, setCat] = useState("all");
+      const [debounced, setDebounced] = useState("");
+      const [page, setPage] = useState(0);
+      const PAGE = 25;
+
+      useEffect(() => {
+        const t = setTimeout(() => { setDebounced(query); setPage(0); }, 200);
+        return () => clearTimeout(t);
+      }, [query]);
+
+      const filtered = useMemo(() => {
+        const q = norm(debounced);
+        if (!q) return [];
+        return ALL.filter((r) => {
+          if (cat !== "all" && r.__cat !== cat) return false;
+          return r.__search.includes(q);
+        });
+      }, [debounced, cat]);
+
+      const pageRows = useMemo(() => {
+        const start = page * PAGE;
+        return filtered.slice(start, start + PAGE);
+      }, [filtered, page]);
+
+      const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
+      return { query, setQuery, cat, setCat, filtered, pageRows, page, setPage, totalPages, PAGE };
+    }
+
+    function App() {
+      const s = useSearch();
+
+      const totals = useMemo(() => {
+        let ppl = 0, shp = 0;
+        for (const r of US_FANS) for (const p of (r.people||[])) { ppl++; shp += (p.shipments||[]).length; }
+        return { us: US_FANS.length, people: ppl, ships: shp, pb: PB_ROWS.length };
+      }, []);
+
+      const doExport = (fmt) => {
+        if (!s.filtered.length) return;
+        const name = `wyniki-${stamp()}`;
+        if (fmt === "csv") download(`${name}.csv`, toCSV(s.filtered), "text/csv;charset=utf-8");
+        else download(`${name}.json`, JSON.stringify(s.filtered, null, 2), "application/json");
+      };
+
+      return (
+        <div className="app">
+          <Hero totalUs={totals.us} totalPeople={totals.people} totalShips={totals.ships} totalPb={totals.pb} />
+          <Tabs active={s.cat} onChange={s.setCat} />
+
+          <div className="search-wrap">
+            <div className="search-input-wrap">
+              <span className="search-icon">⌕</span>
+              <input
+                className="search-input"
+                type="search"
+                placeholder="Miejscowość, imię i nazwisko, telefon, e-mail…"
+                value={s.query}
+                onChange={(e) => s.setQuery(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <button className="btn ghost" onClick={() => s.setQuery("")}>Wyczyść</button>
+          </div>
+
+          <div className="exportbar">
+            <span className="exportbar-label">Pobierz wyniki ({s.filtered.length}):</span>
+            <button className="exp-btn" onClick={() => doExport("csv")} disabled={!s.filtered.length}>CSV</button>
+            <button className="exp-btn" onClick={() => doExport("json")} disabled={!s.filtered.length}>JSON</button>
+          </div>
+
+          <div className="status">
+            {s.query && s.query !== s.debounced && <span className="spinner" />}
+            {s.debounced && s.filtered.length > 0 && (
+              <span>Trafienia: <b style={{color:"var(--text)"}}>{s.filtered.length}</b></span>
+            )}
+            {!s.debounced && <span>Wpisz frazę żeby szukać.</span>}
+          </div>
+
+          <div className="results">
+            {s.debounced && s.filtered.length === 0 && (
+              <div className="empty">
+                <span className="empty-icon">∅</span>
+                Brak trafień dla „{s.debounced}”.
+              </div>
+            )}
+            {s.pageRows.map((r, i) => (
+              r.__cat === "pandabuy"
+                ? <PBCard key={`pb-${r.id || i}`} rec={r} q={s.debounced} />
+                : <USCard key={`us-${r.address || i}`} rec={r} q={s.debounced} />
+            ))}
+          </div>
+
+          {s.filtered.length > s.PAGE && (
+            <div className="pager">
+              <button className="pager-btn" onClick={() => s.setPage(s.page - 1)} disabled={s.page === 0}>← Poprzednia</button>
+              <span className="pager-info">{s.page + 1} / {s.totalPages}</span>
+              <button className="pager-btn" onClick={() => s.setPage(s.page + 1)} disabled={s.page + 1 >= s.totalPages}>Następna →</button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
